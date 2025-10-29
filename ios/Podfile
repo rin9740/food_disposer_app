@@ -1,0 +1,91 @@
+# Uncomment this line to define a global platform for your project
+platform :ios, '15.0'
+
+# CocoaPods analytics sends network stats synchronously affecting flutter build latency.
+ENV['COCOAPODS_DISABLE_STATS'] = 'true'
+
+project 'Runner', {
+  'Debug' => :debug,
+  'Profile' => :release,
+  'Release' => :release,
+}
+
+def flutter_root
+  generated_xcode_build_settings_path = File.expand_path(File.join('..', 'Flutter', 'Generated.xcconfig'), __FILE__)
+  unless File.exist?(generated_xcode_build_settings_path)
+    raise "#{generated_xcode_build_settings_path} must exist. If you're running pod install manually, make sure flutter pub get is executed first"
+  end
+
+  File.foreach(generated_xcode_build_settings_path) do |line|
+    matches = line.match(/FLUTTER_ROOT\=(.*)/)
+    return matches[1].strip if matches
+  end
+  raise "FLUTTER_ROOT not found in #{generated_xcode_build_settings_path}. Try deleting Generated.xcconfig, then run flutter pub get"
+end
+
+require File.expand_path(File.join('packages', 'flutter_tools', 'bin', 'podhelper'), flutter_root)
+
+flutter_ios_podfile_setup
+
+target 'Runner' do
+  use_frameworks!
+  use_modular_headers!
+
+  flutter_install_all_ios_pods File.dirname(File.realpath(__FILE__))
+  
+end
+
+post_install do |installer|
+  installer.pods_project.targets.each do |target|
+    flutter_additional_ios_build_settings(target)
+    
+    target.build_configurations.each do |config|
+      # iOS 15.0 최소 버전 설정
+      config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '15.0'
+      
+      # Bitcode 비활성화
+      config.build_settings['ENABLE_BITCODE'] = 'NO'
+      
+      # Swift 버전
+      config.build_settings['SWIFT_VERSION'] = '5.0'
+      
+      # ✅ Firebase 모듈 빌드 오류 방지
+      config.build_settings['BUILD_LIBRARY_FOR_DISTRIBUTION'] = 'YES'
+      
+      # ✅ M1/M2 맥 시뮬레이터 빌드 충돌 방지 
+      #config.build_settings['EXCLUDED_ARCHS[sdk=iphonesimulator*]'] = 'arm64'
+    end
+  end
+
+
+  puts "🔧 Running automatic header patch fixes..."
+
+  # ✅ 헤더 자동 교정 스크립트 (Pods 전체)
+  puts "🔧 Fixing all pod headers to use proper syntax..."
+
+  # 모든 Pods 내부 #include / #import 들을 <> → "" 로 통일
+  system("find Pods -type f \\( -name '*.h' -o -name '*.m' -o -name '*.mm' -o -name '*.cc' \\) -exec perl -pi -e 's/#include <([^>]+)>/#include \"\\1\"/g' {} +")
+  system("find Pods -type f \\( -name '*.h' -o -name '*.m' -o -name '*.mm' -o -name '*.cc' \\) -exec perl -pi -e 's/#import <([^>]+)>/#import \"\\1\"/g' {} +")
+
+  # ✅ LevelDB include path 완전 교정
+  leveldb_path = "Pods/leveldb-library"
+  if File.directory?(leveldb_path)
+    puts "🧱 Fixing LevelDB headers completely..."
+    
+    # 1️⃣ <leveldb-library/...> → "leveldb/..."
+    system("find #{leveldb_path} -type f \\( -name '*.h' -o -name '*.cc' \\) -exec perl -pi -e 's/#include <leveldb-library\\/leveldb\\//#include \"leveldb\\//g' {} \\;")
+    system("find #{leveldb_path} -type f \\( -name '*.h' -o -name '*.cc' \\) -exec perl -pi -e 's/#include <leveldb-library\\/util\\//#include \"leveldb\\/util\\//g' {} \\;")
+
+    # 2️⃣ 남은 <leveldb-library/...> 패턴 제거
+    system("find #{leveldb_path} -type f \\( -name '*.h' -o -name '*.cc' \\) -exec perl -pi -e 's/#include <leveldb-library\\//#include \"leveldb\\//g' {} \\;")
+
+    # 3️⃣ 모든 include 따옴표로 통일
+    system("find #{leveldb_path} -type f \\( -name '*.h' -o -name '*.cc' \\) -exec perl -pi -e 's/#include <([^>]+)>/#include \"\\1\"/g' {} \\;")
+  else
+    puts "⚠️ LevelDB path not found — skipping"
+  end
+
+  puts "✅ Header fixes complete!"
+
+  
+end
